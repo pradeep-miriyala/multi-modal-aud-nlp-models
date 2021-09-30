@@ -106,7 +106,7 @@ def run_model(model, data_loader, loss_fcn, optimizer, target_device, is_trainin
 
 
 def k_fold_model_preparation(base_model, device, fusion, data, sequences, attention_masks, targets,
-                             k_folds=5, epochs=5, balance_classes=False):
+                             k_folds=5, epochs=5, balance_classes=False, dropout_level=0.25):
     torch.manual_seed(42)
     if fusion:
         print('Running Fusion Model')
@@ -128,7 +128,7 @@ def k_fold_model_preparation(base_model, device, fusion, data, sequences, attent
                                                                     targets[test_ids],
                                                                     test_mfcc)
         best_valid_loss = float('inf')
-        model = TextMfccFusion(base_model, fusion)
+        model = TextMfccFusion(base_model, fusion, dropout_level)
         model.to(device)
         if balance_classes:
             class_wts = compute_class_weight('balanced',

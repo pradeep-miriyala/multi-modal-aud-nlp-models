@@ -76,8 +76,11 @@ def run_model(model, data_loader, loss_fcn, optimizer, target_device, is_trainin
         sent_id, mask, mfcc_means, labels = batch
         if is_training:
             model.zero_grad()  # clear previously calculated gradients
-        # get model predictions for the current batch
-        predictions = model(sent_id, mask, mfcc_means)
+            # get model predictions for the current batch
+            predictions = model(sent_id, mask, mfcc_means)
+        else:
+            with torch.no_grad(): 
+              predictions = model(sent_id, mask, mfcc_means)
         # compute the loss between actual and predicted values
         loss = loss_fcn(predictions, labels)
         # add on to the total loss

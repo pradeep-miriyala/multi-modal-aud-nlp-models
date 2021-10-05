@@ -7,8 +7,34 @@ from matplotlib.gridspec import GridSpec
 from sklearn.metrics import classification_report, precision_score, recall_score, f1_score
 from sklearn.model_selection import StratifiedKFold
 from sklearn.utils import compute_class_weight
-from transformers import AdamW
+from transformers import AutoModel, AutoTokenizer
 import numpy as np
+
+
+def get_devices():
+    if torch.cuda.is_available():
+        gpu = torch.device("cuda")
+    else:
+        gpu = torch.device("cpu")
+    cpu = torch.device("cpu")
+    return gpu, cpu
+
+
+def plot_histogram(text_data):
+    seq_lens = [len(sentence.split()) for sentence in text_data]
+    plt.hist(seq_lens)
+    plt.xlabel('Word Count')
+    plt.ylabel('Number of Sentences')
+    plt.title('Histogram of Word Count')
+    plt.show()
+
+
+def load_bert_model(chk_point):
+    model = AutoModel.from_pretrained(chk_point)
+    tokenizer = AutoTokenizer.from_pretrained(chk_point)
+    for param in model.parameters():
+        param.requires_grad = False
+    return model, tokenizer
 
 
 class BertMfccFusion(nn.Module):
@@ -19,18 +45,18 @@ class BertMfccFusion(nn.Module):
         self.hidden_dim = hidden_dim
         self.seq_len = seq_len
         self.lstm = nn.LSTM(768, self.hidden_dim, self.n_layers, dropout=dropout_level, batch_first=True,
-                            bidirectional=True) # 768 is fixed from bert models
+                            bidirectional=True)  # 768 is fixed from bert models
         self.fc = nn.Linear(2 * self.hidden_dim, 512)
         self.fusion = fusion
-        self.relu = nn.ReLU()
+        self.gelu = nn.GELU()
         if self.fusion:
             # Fully connected audio layer
-            self.fca = [nn.Linear(41, 64), nn.ReLU(), nn.Dropout(dropout_level),
-                        nn.Linear(64, 128), nn.ReLU(), nn.Dropout(dropout_level)]
+            self.fca = [nn.Linear(41, 64), nn.GELU(), nn.Dropout(dropout_level),
+                        nn.Linear(64, 128), nn.GELU(), nn.Dropout(dropout_level)]
             # Fusion layers
             # 512 is dimension from layer fc which has to be concatenated with last layer from fca.
-            self.fusions = [nn.Linear(512 + 128, 512), nn.ReLU(), nn.Dropout(dropout_level),
-                            nn.Linear(512, 512), nn.ReLU(), nn.Dropout(dropout_level)]
+            self.fusions = [nn.Linear(512 + 128, 512), nn.GELU(), nn.Dropout(dropout_level),
+                            nn.Linear(512, 512), nn.GELU(), nn.Dropout(dropout_level)]
             self.final = nn.Linear(512, 2)
         else:
             self.final = nn.Linear(2 * self.hidden_dim, 2)
@@ -43,12 +69,14 @@ class BertMfccFusion(nn.Module):
         x_reverse = lstm_out[:, 0, self.hidden_dim:]
         x = torch.cat((x_forward, x_reverse), 1)
         x = self.fc(x)
-        x = self.relu(x)
+        x = self.gelu(x)
         if self.fusion:
             a = mfcc_data
-            for layer in self.fca: a = layer(a)
+            for layer in self.fca:
+                a = layer(a)
             x = torch.cat((x, a), dim=1)  # Fusion Layer
-            for layer in self.fusions: x = layer(x)
+            for layer in self.fusions:
+                x = layer(x)
         x = self.final(x)
         x = self.softmax(x)
         return x
@@ -66,11 +94,13 @@ class BertMfccFusion(nn.Module):
             self.fusions = [layer.to(device) for layer in self.fusions]
             self.fca = [layer.to(device) for layer in self.fca]
 
-    def zero_grad(self):
+    def zero_grad(self, **kwargs):
         super().zero_grad()
         if self.fusion:
-            for layer in self.fusions: layer.zero_grad()
-            for layer in self.fca: layer.zero_grad()
+            for layer in self.fusions:
+                layer.zero_grad()
+            for layer in self.fca:
+                layer.zero_grad()
 
 
 def get_data_loader(seq, mask, y, mfcc_data=None, batch_size=16, random_seed=42):
@@ -82,7 +112,7 @@ def get_data_loader(seq, mask, y, mfcc_data=None, batch_size=16, random_seed=42)
     return data, sampler, data_loader
 
 
-def run_model(model, data_loader, loss_fcn, optimizer, target_device, is_training):
+def run_model(model, data_loader, loss_fcn, optimizer, target_device, is_training, clip_at=None):
     if is_training:
         print('Training Model')
         model.train()
@@ -106,15 +136,15 @@ def run_model(model, data_loader, loss_fcn, optimizer, target_device, is_trainin
             predictions = model(sent_id, mask, mfcc_means, h)
         else:
             with torch.no_grad():
-              predictions = model(sent_id, mask, mfcc_means, h)
+                predictions = model(sent_id, mask, mfcc_means, h)
         # compute the loss between actual and predicted values
         loss = loss_fcn(predictions, labels)
         # add on to the total loss
         total_loss = total_loss + loss.item()
         if is_training:
             loss.backward()  # backward pass to calculate the gradients
-            # clip the the gradients to 1.0. It helps in preventing the exploding gradient problem
-            #torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            if clip_at:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), clip_at)
             # update parameters
             optimizer.step()
         # model predictions are stored on GPU. So, push it to CPU
@@ -134,9 +164,10 @@ def run_model(model, data_loader, loss_fcn, optimizer, target_device, is_trainin
     return avg_loss, model_predictions, model_labels, model
 
 
-def k_fold_model_preparation(base_model, device, data, sequences, attention_masks, targets, max_seq_len=75, fusion=False,
+def k_fold_model_preparation(base_model, device, data, sequences, attention_masks, targets, max_seq_len=75,
+                             fusion=False,
                              k_folds=5, epochs=5, balance_classes=False, dropout_level=0.25, lr=1e-5,
-                             hidden_dim = 256,  n_layers = 6):
+                             hidden_dim=256, n_layers=6, clip_at=1.0):
     torch.manual_seed(42)
     if fusion:
         print('Running Fusion Model')
@@ -158,7 +189,8 @@ def k_fold_model_preparation(base_model, device, data, sequences, attention_mask
                                                                     targets[test_ids],
                                                                     test_mfcc)
         best_valid_loss = float('inf')
-        model = BertMfccFusion(base_model, fusion=fusion, hidden_dim=hidden_dim, seq_len=max_seq_len, n_layers=n_layers, dropout_level=dropout_level)
+        model = BertMfccFusion(base_model, fusion=fusion, hidden_dim=hidden_dim, seq_len=max_seq_len, n_layers=n_layers,
+                               dropout_level=dropout_level)
         model.to(device)
         if balance_classes:
             class_wts = compute_class_weight('balanced',
@@ -188,11 +220,12 @@ def k_fold_model_preparation(base_model, device, data, sequences, attention_mask
         for epoch in range(epochs):
             print('Epoch {:} / {:}'.format(epoch + 1, epochs))
             # train model
-            train_loss, train_predictions, train_labels, model = run_model(model, train_data_loader, loss_fcn, optimizer,
-                                                                    device, True)
+            train_loss, train_predictions, train_labels, model = run_model(model, train_data_loader, loss_fcn,
+                                                                           optimizer,
+                                                                           device, True, clip_at)
             # evaluate model
             valid_loss, test_predictions, test_labels, model = run_model(model, test_data_loader, loss_fcn, optimizer,
-                                                                  device, False)
+                                                                         device, False, clip_at)
             # save the best model
             if valid_loss < best_valid_loss:
                 best_valid_loss = valid_loss
@@ -213,7 +246,8 @@ def k_fold_model_preparation(base_model, device, data, sequences, attention_mask
             results[fold]['validation_f1'].append(f1_score(test_labels, test_predictions))
             torch.cuda.empty_cache()
 
-            for lrsc in lr_schedulers: lrsc.step(valid_loss)
+            for lr_scheduler in lr_schedulers:
+                lr_scheduler.step(valid_loss)
         print('On Train Data')
         print(classification_report(best_train_labels, best_train_predictions))
         print('On Test Data')
@@ -221,6 +255,7 @@ def k_fold_model_preparation(base_model, device, data, sequences, attention_mask
         results[fold]['train_losses'] = train_losses
         results[fold]['validation_losses'] = valid_losses
     return results
+
 
 def plot_results(results, model_name):
     fig = plt.figure(figsize=[20, 10])
@@ -235,12 +270,12 @@ def plot_results(results, model_name):
         plt.xlabel(x_label)
         plt.title(title)
         plt.legend(legend_labels)
-        if not loss: 
+        if not loss:
             plt.ylim([0, 1.1])
         else:
             b, t = plt.ylim()
             plt.ylim(np.floor(b), np.ceil(t))
-    
+
     gs = GridSpec(2, 3, figure=fig)
     plt.subplot(gs.new_subplotspec((0, 0), colspan=3))
     subplot_routine('train_losses', 'validation_losses', 'Losses', True)

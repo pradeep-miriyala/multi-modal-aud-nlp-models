@@ -1,26 +1,15 @@
-import enum
 import os
 import datetime
-import pandas as pd
-import numpy as np
-
-import torch
-import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 from torch.optim.lr_scheduler import ReduceLROnPlateau, ExponentialLR
 from transformers import AutoModel, AutoTokenizer
 
-from sklearn.metrics import classification_report, precision_score, recall_score, f1_score
+from sklearn.metrics import classification_report
 from sklearn.model_selection import StratifiedKFold
 from sklearn.utils import compute_class_weight
 
 from PIL import Image
-
-
-class FusionTypes(enum.Enum):
-    TXT = 0
-    MFCC = 1
-    MEL = 2
+from common_helpers import *
 
 
 def get_devices():
@@ -38,25 +27,6 @@ def load_bert_model(chk_point):
     for param in model.parameters():
         param.requires_grad = False
     return model, tokenizer
-
-
-class DummyModel(nn.Module):
-    def __init__(self, sequential):
-        super().__init__()
-        self.layers = sequential
-
-    def forward(self, x):
-        return self.layers(x)
-
-
-def seq_layer_size(layer, ip_shape):
-    if isinstance(layer, nn.Sequential):
-        obj = DummyModel(layer)
-        op = obj(torch.randn(ip_shape))
-        return op.data.shape[1]
-    elif hasattr(layer, 'out_features'):
-        return layer.out_features
-    return 0
 
 
 class BertDataset(Dataset):
@@ -220,13 +190,16 @@ class BertMelFusionModel(BertFineTuningModel):
         if self.fusion:
             # Fully connected audio layer with MEL Spectrogram
             self.mel_layers = nn.Sequential(
-                nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3),
+                nn.Conv2d(in_channels=3, out_channels=16, kernel_size=(2, 2), padding='same'),
                 nn.MaxPool2d(kernel_size=3),
                 nn.ReLU(),
-                nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3),
+                nn.Conv2d(in_channels=16, out_channels=32, kernel_size=(2, 2), padding='same'),
                 nn.MaxPool2d(kernel_size=3),
                 nn.ReLU(),
-                nn.Conv2d(in_channels=32, out_channels=64, kernel_size=2),
+                nn.Conv2d(in_channels=32, out_channels=64, kernel_size=(2, 2), padding='same'),
+                nn.MaxPool2d(kernel_size=2),
+                nn.ReLU(),
+                nn.Conv2d(in_channels=64, out_channels=128, kernel_size=(2, 2), padding='same'),
                 nn.MaxPool2d(kernel_size=2),
                 nn.ReLU(),
                 nn.Flatten()
@@ -267,6 +240,7 @@ def run_model(model, dataset, loss_fcn, optimizer, is_training, run_on, clip_at=
     # empty list to save model predictions
     model_predictions, model_labels = [], []
     # iterate over batches
+    aud_data = None
     for step, batch in enumerate(dataset):
         if step % 50 == 0 and not step == 0:
             print('  Batch {:>5,}  of  {:>5,}.'.format(step, len(dataset)))
@@ -387,17 +361,23 @@ def run_k_fold(base_model, device, data, sequences, attention_masks,
     for fold, (train_ids, test_ids) in enumerate(k_fold.split(data[['Lyric']], data['iGenre'])):
         print(f'FOLD {fold}')
         fold_start = datetime.datetime.now()
-        best_valid_loss = float('inf')
         # empty lists to store training and validation loss of each epoch
         train_losses, valid_losses = [], []
-        best_train_predictions, best_test_predictions, best_train_labels, best_test_labels = [], [], [], []
+        best_scores = {'valid_loss': float('inf'),
+                       'train_predictions': [],
+                       'test_predictions': [],
+                       'train_labels': [],
+                       'test_labels': []
+                       }
         # for each epoch
-        results[fold]['train_precision'] = []
-        results[fold]['train_recall'] = []
-        results[fold]['train_f1'] = []
-        results[fold]['validation_precision'] = []
-        results[fold]['validation_recall'] = []
-        results[fold]['validation_f1'] = []
+        results[fold] = {
+            'train_f1': [],
+            'validation_f1': [],
+            'train_precision': [],
+            'validation_precision': [],
+            'train_recall': [],
+            'validation_recall': []
+        }
         train_data, test_data = prepare_train_test_data(data, sequences, attention_masks, labels, fusion,
                                                         train_ids, test_ids, img_path)
         model, is_fusion = get_model_to_train(fusion, base_model, hidden_dim=hidden_dim, seq_len=max_seq_len,
@@ -406,7 +386,8 @@ def run_k_fold(base_model, device, data, sequences, attention_masks,
         loss_fcn = get_loss_function(balance_classes, labels[train_ids], device)
         # define the optimizer
         optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-        lr_schedulers = [ReduceLROnPlateau(optimizer, 'min'), ExponentialLR(optimizer, 0.9)]
+        lr_schedulers = [ReduceLROnPlateau(optimizer, 'min'),
+                         ExponentialLR(optimizer, 0.9)]
         for epoch in range(epochs):
             e_start = datetime.datetime.now()
             print('Epoch {:} / {:}'.format(epoch + 1, epochs))
@@ -428,52 +409,35 @@ def run_k_fold(base_model, device, data, sequences, attention_masks,
                                                                          is_training=False,
                                                                          clip_at=clip_at,
                                                                          is_fusion=is_fusion)
+            print(f'Losses - Train : {train_loss:.3f} / Validation : {valid_loss:.3f}')
             for lr_scheduler in lr_schedulers:
                 lr_scheduler.step(valid_loss)
             torch.cuda.empty_cache()
-
-            best_valid_loss, best_test_labels, best_test_predictions, best_train_labels, best_train_predictions = \
-                store_results(best_test_labels, best_test_predictions, best_train_labels, best_train_predictions,
-                              best_valid_loss,
-                              fold, model, results, test_labels, test_predictions, train_labels, train_loss,
-                              train_losses,
-                              train_predictions, valid_loss, valid_losses)
+            # save the best model
+            best_scores = update_best_result(best_scores,
+                                             valid_loss,
+                                             train_labels, train_predictions,
+                                             test_labels, test_predictions,
+                                             model=model,
+                                             model_file_name=f'saved_weights_Fold_{fold}.pt')
+            # append training and validation loss
+            train_losses.append(train_loss)
+            valid_losses.append(valid_loss)
+            results[fold] = update_results_dict(results[fold],
+                                                train_labels, train_predictions,
+                                                test_labels, test_predictions)
             e_end = datetime.datetime.now()
             print(f'Time for epoch : {(e_end - e_start).total_seconds()} seconds')
         print('On Train Data')
-        print(classification_report(best_train_labels, best_train_predictions))
+        print(classification_report(best_scores['train_labels'], best_scores['train_predictions']))
         print('On Test Data')
-        print(classification_report(best_test_labels, best_test_predictions))
+        print(classification_report(best_scores['test_labels'], best_scores['test_predictions']))
         results[fold]['train_losses'] = train_losses
         results[fold]['validation_losses'] = valid_losses
         print(f'Time for fold {fold} : {(datetime.datetime.now() - fold_start).total_seconds()} seconds')
     end_time = datetime.datetime.now()
     print(f'Overall Time : {(end_time - start_time).total_seconds()} seconds')
-    return results, results_to_pd(results)
-
-
-def store_results(best_test_labels, best_test_predictions, best_train_labels, best_train_predictions, best_valid_loss,
-                  fold, model, results, test_labels, test_predictions, train_labels, train_loss, train_losses,
-                  train_predictions, valid_loss, valid_losses):
-    # save the best model
-    if valid_loss < best_valid_loss:
-        best_valid_loss = valid_loss
-        best_train_predictions = train_predictions
-        best_test_predictions = test_predictions
-        best_train_labels = train_labels
-        best_test_labels = test_labels
-        torch.save(model.state_dict(), f'saved_weights_Fold{fold}.pt')
-    # append training and validation loss
-    train_losses.append(train_loss)
-    valid_losses.append(valid_loss)
-    print(f'Losses - Train : {train_loss:.3f} / Validation : {valid_loss:.3f}')
-    results[fold]['train_precision'].append(precision_score(train_labels, train_predictions))
-    results[fold]['train_recall'].append(recall_score(train_labels, train_predictions))
-    results[fold]['train_f1'].append(f1_score(train_labels, train_predictions))
-    results[fold]['validation_precision'].append(precision_score(test_labels, test_predictions))
-    results[fold]['validation_recall'].append(recall_score(test_labels, test_predictions))
-    results[fold]['validation_f1'].append(f1_score(test_labels, test_predictions))
-    return best_valid_loss, best_test_labels, best_test_predictions, best_train_labels, best_train_predictions
+    return results, results_to_df(results)
 
 
 def process_data_w_base_model(data, tokenizer, max_seq_len=25):
@@ -487,25 +451,3 @@ def process_data_w_base_model(data, tokenizer, max_seq_len=25):
     attention_masks = torch.tensor(all_tokens['attention_mask'])
     targets = torch.tensor(data['iGenre'].tolist())
     return sequences, attention_masks, targets
-
-
-def results_to_pd(results):
-    p = pd.DataFrame(results[0])
-    for i in range(1, len(results)):
-        p = pd.concat([p, pd.DataFrame(results[i])], axis=0)
-    p.sort_values(by='validation_f1', ascending=False, inplace=True)
-    return p
-
-
-def conv_output_shape(h, w, kernel_size=1, stride=1, pad=0, dilation=1):
-    """
-    Utility function for computing output of convolutions
-    takes a tuple of (h,w) and returns a tuple of (h,w)
-    Based on https://discuss.pytorch.org/t/utility-function-for-calculating-the-shape-of-a-conv-output/11173/5
-    """
-    from math import floor
-    if type(kernel_size) is not tuple:
-        kernel_size = (kernel_size, kernel_size)
-    h = floor(((h + (2 * pad) - (dilation * (kernel_size[0] - 1)) - 1) / stride) + 1)
-    w = floor(((w + (2 * pad) - (dilation * (kernel_size[1] - 1)) - 1) / stride) + 1)
-    return h, w

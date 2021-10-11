@@ -3,7 +3,7 @@ import datetime
 import numpy as np
 import torch
 import torch.nn as nn
-from PIL.Image import Image
+from PIL import Image
 from sklearn.metrics import classification_report
 from sklearn.model_selection import StratifiedKFold
 from sklearn.utils import compute_class_weight
@@ -30,7 +30,7 @@ class FtDataSet(Dataset):
         return DataLoader(self, batch_size=batch_size, generator=g)
 
 
-class FtMfccDataSet(Dataset):
+class FtMfccDataSet(FtDataSet):
     def __init__(self, sent_vectors, labels, mfcc_data):
         super().__init__(sent_vectors, labels)
         self.mfcc_data = mfcc_data
@@ -74,47 +74,27 @@ class FtMelDataset(IterableDataset):
 
 
 class FtSentVectorsModel(nn.Module):
-    def __init__(self, dropout_level=0.25, hidden_dim=256, n_layers=5):
+    def __init__(self, dropout_level=0.25):
         super().__init__()
         self.FT_VEC_SIZE = 300
-        self.hidden_dim = hidden_dim
-        self.n_layers = n_layers
-        self.lstm = nn.LSTM(self.FT_VEC_SIZE,
-                            self.hidden_dim,
-                            self.n_layers,
-                            dropout=dropout_level,
-                            batch_first=True,
-                            bidirectional=True)
-        self.fw = nn.Sequential(nn.Linear(2 * self.hidden_dim, 1024),
-                                nn.GELU())
+        self.fc = nn.Sequential(
+            nn.Linear(300, 512), nn.ReLU(), nn.Dropout(dropout_level),
+            nn.Linear(512, 512), nn.ReLU(), nn.Dropout(dropout_level),
+            nn.Linear(512, 1024), nn.ReLU(), nn.Dropout(dropout_level)
+        )
         self.final = nn.Linear(1024, 2)
         self.softmax = nn.LogSoftmax(dim=1)
 
-    def forward(self, sent_vector, hidden):
-        x = self.forward_bert(sent_vector, hidden)
+    def forward(self, sent_vector):
+        x = self.fc(sent_vector)
         x = self.final(x)
         x = self.softmax(x)
         return x
 
-    def forward_bert(self, sent_vector, hidden):
-        lstm_out, hidden = self.lstm(sent_vector, hidden)
-        x_forward = lstm_out[range(len(lstm_out)), self.seq_len - 1, :self.hidden_dim]
-        x_reverse = lstm_out[:, 0, self.hidden_dim:]
-        x = torch.cat((x_forward, x_reverse), 1)
-        x = self.fw(x)
-        return x
-
-    def init_hidden(self, batch_size, target_device):
-        weight = next(self.parameters()).data
-        # Bi directional LSTM
-        hidden = (weight.new(2 * self.n_layers, batch_size, self.hidden_dim).zero_().to(target_device),
-                  weight.new(2 * self.n_layers, batch_size, self.hidden_dim).zero_().to(target_device))
-        return hidden
-
 
 class FtMfccFusionModel(FtSentVectorsModel):
-    def __init__(self, dropout_level=0.25, hidden_dim=256, n_layers=5, fusion=False, mfcc_len=41):
-        super().__init__(dropout_level=dropout_level, n_layers=n_layers, hidden_dim=hidden_dim)
+    def __init__(self, dropout_level=0.25, fusion=False, mfcc_len=41):
+        super().__init__(dropout_level=dropout_level)
         self.mfcc_len = mfcc_len
         self.fusion = fusion
         if self.fusion:
@@ -143,8 +123,8 @@ class FtMfccFusionModel(FtSentVectorsModel):
                                                nn.ReLU(),
                                                nn.Dropout(dropout_level))
 
-    def forward(self, sent_vector, mfcc_data, hidden):
-        x = self.forward_bert(sent_vector, hidden)
+    def forward(self, sent_vector, mfcc_data):
+        x = self.fc(sent_vector)
         if self.fusion:
             a = self.fca(mfcc_data)
             x = torch.cat((x, a), dim=1)
@@ -155,8 +135,8 @@ class FtMfccFusionModel(FtSentVectorsModel):
 
 
 class FtMelFusionModel(FtSentVectorsModel):
-    def __init__(self, dropout_level=0.25, hidden_dim=256, n_layers=5, fusion=False, img_height=80, img_width=80):
-        super().__init__(dropout_level=dropout_level, n_layers=n_layers, hidden_dim=hidden_dim)
+    def __init__(self, dropout_level=0.25, fusion=False, img_height=80, img_width=80):
+        super().__init__(dropout_level=dropout_level)
         self.fusion = fusion
         self.img_width = img_width
         self.img_height = img_height
@@ -178,7 +158,7 @@ class FtMelFusionModel(FtSentVectorsModel):
             )
             # Fusion layers
             s = seq_layer_size(self.mel_layers, [1, 3, self.img_height, self.img_width])
-            s += seq_layer_size(self.fw, [1, 2 * self.hidden_dim])
+            s += 1024  # Size of last layer in fc.
             self.fusions = nn.Sequential(
                 nn.Linear(s, 512),
                 nn.GELU(),
@@ -188,12 +168,12 @@ class FtMelFusionModel(FtSentVectorsModel):
                 nn.Dropout(dropout_level)
             )
 
-    def forward(self, sent_vector, mel_data, hidden):
-        x = self.forward_bert(sent_vector, hidden)
+    def forward(self, sent_vector, mel_data):
+        x = self.fc(sent_vector)
         if self.fusion:
-            a = self.mel_layers(mel_data)
+            a = self.mel_layers(mel_data.permute(0, 3, 1, 2).float())
             x = torch.cat((x, a), dim=1)
-            x = self.fusion_layers(x)
+            x = self.fusions(x)
         x = self.final(x)
         x = self.softmax(x)
         return x
@@ -220,20 +200,19 @@ def run_model(model, dataset, loss_fcn, optimizer, is_training, run_on, clip_at=
             sent_vector, aud_data, labels = batch
         else:
             sent_vector, labels = batch
-        h = model.init_hidden(len(labels), run_on)
         if is_training:
             model.zero_grad()  # clear previously calculated gradients
             # get model predictions for the current batch
             if is_fusion:
-                predictions = model(sent_vector, aud_data, h)
+                predictions = model(sent_vector, aud_data)
             else:
-                predictions = model(sent_vector, h)
+                predictions = model(sent_vector)
         else:
             with torch.no_grad():
                 if is_fusion:
-                    predictions = model(sent_vector, aud_data, h)
+                    predictions = model(sent_vector, aud_data)
                 else:
-                    predictions = model(sent_vector, h)
+                    predictions = model(sent_vector)
         # compute the loss between actual and predicted values
         loss = loss_fcn(predictions, labels)
         # add on to the total loss
@@ -283,20 +262,17 @@ def prepare_train_test_data(data, ft_feature, targets, fusion, train_ids, test_i
     return train_data, test_data
 
 
-def get_model_to_train(fusion, hidden_dim, n_layers, dropout_level, run_on, mfcc_len=41,
+def get_model_to_train(fusion, dropout_level, run_on, mfcc_len=41,
                        img_height=80, img_width=80):
     if fusion == FusionTypes.MFCC:
-        model = FtMfccFusionModel(fusion=True, hidden_dim=hidden_dim,
-                                  n_layers=n_layers, dropout_level=dropout_level, mfcc_len=mfcc_len)
+        model = FtMfccFusionModel(fusion=True, dropout_level=dropout_level, mfcc_len=mfcc_len)
         is_fusion = True
     elif fusion == FusionTypes.MEL:
-        model = FtMelFusionModel(fusion=True, hidden_dim=hidden_dim,
-                                 n_layers=n_layers, dropout_level=dropout_level,
+        model = FtMelFusionModel(fusion=True, dropout_level=dropout_level,
                                  img_height=img_height, img_width=img_width)
         is_fusion = True
     else:
-        model = FtSentVectorsModel(hidden_dim=hidden_dim,
-                                   n_layers=n_layers, dropout_level=dropout_level)
+        model = FtSentVectorsModel(dropout_level=dropout_level)
         is_fusion = False
     model.to(run_on)
     return model, is_fusion
@@ -320,8 +296,7 @@ def get_loss_function(balance_classes, labels, run_on, loss_fcn=nn.NLLLoss):
 def run_k_fold(device, data, ft_feature, fusion=None, k_folds=5,
                epochs=5, balance_classes=False,
                dropout_level=0.25, lr=1e-5,
-               hidden_dim=256, n_layers=6, clip_at=1.0,
-               mfcc_len=41, img_height=80, img_width=80, img_path=None):
+               clip_at=1.0, mfcc_len=41, img_height=80, img_width=80, img_path=None):
     start_time = datetime.datetime.now()
     torch.manual_seed(42)
     labels = torch.tensor(data['iGenre'].tolist())
@@ -354,8 +329,7 @@ def run_k_fold(device, data, ft_feature, fusion=None, k_folds=5,
         train_data, test_data = prepare_train_test_data(data, ft_feature, labels, fusion,
                                                         train_ids, test_ids, img_path, img_height=img_height,
                                                         img_width=img_width)
-        model, is_fusion = get_model_to_train(fusion, hidden_dim=hidden_dim,
-                                              n_layers=n_layers, mfcc_len=mfcc_len, img_height=img_height,
+        model, is_fusion = get_model_to_train(fusion, mfcc_len=mfcc_len, img_height=img_height,
                                               img_width=img_width, run_on=device, dropout_level=dropout_level)
         loss_fcn = get_loss_function(balance_classes, labels[train_ids], device)
         # define the optimizer

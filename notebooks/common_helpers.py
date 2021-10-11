@@ -8,6 +8,15 @@ import enum
 from sklearn.metrics import precision_score, f1_score, recall_score
 
 
+def get_devices():
+    if torch.cuda.is_available():
+        gpu = torch.device("cuda")
+    else:
+        gpu = torch.device("cpu")
+    cpu = torch.device("cpu")
+    return gpu, cpu
+
+
 class FusionTypes(enum.Enum):
     TXT = 0
     MFCC = 1

@@ -3,13 +3,11 @@ This repository contains lyrical data, notebooks for analysis of song lyrics wit
 - Dataset has 1233 samples which is split in to 70:30 ratio for train and test validation.
 - 40 MFCC values are extracted for each audio
 - LSTM layers are used to finetune output from BERT based models
-- Adding MFCC bought instability in training process
-- IndicBERT and MBERT are more stable compared to XLM-R and MURIL
 - BERT models provide 768 element sentence embeddings
 - Fast text pretrained models provide 300 element sentence embeddings
+- All fine tuning models are RNN models as feed forward network performance is very poor
 
-
-Following models are experimented:
+## [Machine Learning Models](https://github.com/pradeep-miriyala/multi-modal-bert-models/blob/main/notebooks/Genre_classification_ML_Models.ipynb)
 | Model | Type | Training F1 | Test F1 | Training Precision | Test Precision | Training Recall | Test Recall |
 | -- | -- | -- | -- | -- | -- | -- | -- |
 | 5 Fold SGD Classifier | Single Modal (Text) | 87% | 84% | 80% | 77% | 94% | 92% |
@@ -18,21 +16,37 @@ Following models are experimented:
 | 10 Fold SGD Classifier | Single Modal (Text) | 87% | 83% | 80% | 77% | 94% | 92% |
 | 10 Fold Logistic Regression | Single Modal (Text) | 86% | 83% | 79% | 76% | 94% | 92% |
 | 10 Fold Linear SVC | Single Modal (Text) | 87% | 83% | 83% | 77% | 92% | 88% |
-| Fast Text | Single Modal (Text) | 100% | 88% | 100% | 88% | 100% | 88% |
-| Fast Text Embeddings from Pretrained model * | Single Modal (Text) | 80% | 80% | 80% | 80% | 90% | 90% |
-| Fast Text Embeddings from Pretrained model * | Multi Modal (Text + MFCC) | 80% | 80% | 70% | 70% | 100% | 100% |
-| Indic Fast Text Embeddings from Pretrained model * | Single Modal (Text) | 80% | 80% | 80% | 80% | 90% | 90% |
-| Indic Fast Text Embeddings from Pretrained model * | Multi Modal (Text + MFCC) | 80% | 80% | 70% | 70% | 100% | 100% |
-| LSTM Model * | Single Modal (Text) | 86% | 80% | 92% | 79% | 82% | 82% |
-| LSTM Model * | Multi Modal (Text + MFCC) | 85% | 80% | 90% | 80% | 79% | 80% |
-| Indic BERT Finetuning * | Single Modal (Text) | 90% | 82% | 92% | 78% | 85% | 90% |
-| Indic BERT Finetuning * | Multi Modal (Text + MFCC) | 83% | 82% | 85% | 81% | 75% | 83% |
-| M-BERT Finetuning * | Single Modal (Text) | 84% | 84% | 90% | 90% | 92% | 84% |
-| M-BERT Finetuning * | Multi Modal (Text + MFCC) | 84% | 84% | 90% | 90% | 84% | 83% |
-| MURIL Finetuning * | Single Modal (Text) | 85% | 85% | 90% | 80% | 85% | 95% |
-| MURIL Finetuning * | Multi Modal (Text + MFCC) | 70% | 85% | 70% | 80% | 75% | 95% |
-| XLM-R Finetuning * | Single Modal (Text) | 83% | 83% | 90% | 81% | 80% | 92% |
-| XLM-R Finetuning * | Multi Modal (Text + MFCC) | 83% | 85% | 80% | 80% | 95% | 85% |
 
-TODO: * Results are approximately noted from plots. Accurate results to be obtained 
-TODO: Run Multi modal experiments with MEL spectrograms
+## Fast Text Models
+| Model | Type | Training F1 | Test F1 | Training Precision | Test Precision | Training Recall | Test Recall |
+| -- | -- | -- | -- | -- | -- | -- | -- |
+| [Fast Text Supervised Learning](https://github.com/pradeep-miriyala/multi-modal-bert-models/blob/main/notebooks/Fasttext%20Supervised%20Classification.ipynb) | Single Modal (Text) | 100% | 88% | 100% | 88% | 100% | 88% |
+| [Fast Text Embeddings from Pretrained model](https://github.com/pradeep-miriyala/multi-modal-bert-models/blob/main/notebooks/FT_Vectors_and_MFCC_Fusion.ipynb)* | Single Modal (Text) | 80% | 80% | 80% | 80% | 90% | 90% |
+| [Fast Text Embeddings from Pretrained model](https://github.com/pradeep-miriyala/multi-modal-bert-models/blob/main/notebooks/FT_Vectors_and_MFCC_Fusion.ipynb)* | Multi Modal (Text + MFCC) | 80% | 80% | 70% | 70% | 100% | 100% |
+| [Indic Fast Text Embeddings from Pretrained model](https://github.com/pradeep-miriyala/multi-modal-bert-models/blob/main/notebooks/FT_Vectors_and_MFCC_Fusion.ipynb)* | Single Modal (Text) | 80% | 80% | 80% | 80% | 90% | 90% |
+| [Indic Fast Text Embeddings from Pretrained model](https://github.com/pradeep-miriyala/multi-modal-bert-models/blob/main/notebooks/FT_Vectors_and_MFCC_Fusion.ipynb)* | Multi Modal (Text + MFCC) | 80% | 80% | 70% | 70% | 100% | 100% |
+* Results are approximately noted from plots.
+
+## [LSTM Model from Word Embeddings](https://github.com/pradeep-miriyala/multi-modal-bert-models/blob/main/notebooks/LSTM_Model.ipynb)
+| Model | Type | Training F1 | Test F1 | Training Precision | Test Precision | Training Recall | Test Recall |
+| -- | -- | -- | -- | -- | -- | -- | -- |
+| LSTM Model* | Single Modal (Text) | 86% | 80% | 92% | 79% | 82% | 82% |
+| LSTM Model* | Multi Modal (Text + MFCC) | 85% | 80% | 90% | 80% | 79% | 80% |
+* Results are approximately noted from plots.
+
+## BERT based models with LSTM Layer fine tuning
+| Model | Type | Training F1 | Test F1 | Training Precision | Test Precision | Training Recall | Test Recall |
+| -- | -- | -- | -- | -- | -- | -- | -- |
+| [Indic BERT Finetuning](https://github.com/pradeep-miriyala/multi-modal-bert-models/blob/main/notebooks/IndicBERT_Simplified.ipynb) | Single Modal (Text) | 96.62% | 85.07% | 94.82% | 80.74% | 98.5% | 89.88% |
+| [Indic BERT Finetuning](https://github.com/pradeep-miriyala/multi-modal-bert-models/blob/main/notebooks/IndicBERT_Simplified.ipynb) | Multi Modal (Text + MFCC) | 95.77% | 84.70% | 95% | 83.72% | 96.56% | 85.71% |
+| [Indic BERT Finetuning](https://github.com/pradeep-miriyala/multi-modal-bert-models/blob/main/notebooks/IndicBERT_Simplified.ipynb) | Multi Modal (Text + MEL) | 95.30% | 85.16% | 92.17% | 79.08% | 98.65% | 92.26% |
+| [M-BERT Finetuning](https://github.com/pradeep-miriyala/multi-modal-bert-models/blob/main/notebooks/MBERT_Simplified.ipynb) | Single Modal (Text) | 87.79% | 86.82% | 86.52% | 86.82% | 89.10% | 86.82% |
+| [M-BERT Finetuning](https://github.com/pradeep-miriyala/multi-modal-bert-models/blob/main/notebooks/MBERT_Simplified.ipynb) | Multi Modal (Text + MFCC) | 90.09% | 83.80% | 88.47% | 89.79% | 91.77% | 78.57% |
+| [M-BERT Finetuning](https://github.com/pradeep-miriyala/multi-modal-bert-models/blob/main/notebooks/MBERT_Simplified.ipynb) | Multi Modal (Text + MEL) | 86.16% | 84.37% | 86.22% | 88.81% | 86.09% | 80.35% |
+| [MURIL Finetuning](https://github.com/pradeep-miriyala/multi-modal-bert-models/blob/main/notebooks/MURIL_Simplified.ipynb) | Single Modal (Text) | 82.30% | 88.88% | 76.54% | 85.46% | 88.99% | 92.60% |
+| [MURIL Finetuning](https://github.com/pradeep-miriyala/multi-modal-bert-models/blob/main/notebooks/MURIL_Simplified.ipynb) | Multi Modal (Text + MFCC) | 78.55% | 88.07% | 72.37% | 82.63% | 85.88% | 94.27% |
+| [MURIL Finetuning](https://github.com/pradeep-miriyala/multi-modal-bert-models/blob/main/notebooks/MURIL_Simplified.ipynb) | Multi Modal (Text + MEL) | 76.35% | 88.83% | 72.12% | 87.50% | 81.10% | 90.21% |
+| [XLM-R Finetuning](https://github.com/pradeep-miriyala/multi-modal-bert-models/blob/main/notebooks/XLMR_Simplified.ipynb) | Single Modal (Text) | 82.30% | 87.00% | 82.55% | 82.79% | 82.06% | 91.66% |
+| [XLM-R Finetuning](https://github.com/pradeep-miriyala/multi-modal-bert-models/blob/main/notebooks/XLMR_Simplified.ipynb) | Multi Modal (Text + MFCC) | 83.93% | 86.40% | 80.80% | 77.88% | 87.31% | 97.00% |
+| [XLM-R Finetuning](https://github.com/pradeep-miriyala/multi-modal-bert-models/blob/main/notebooks/XLMR_Simplified.ipynb) | Multi Modal (Text + MEL) | 85.17% | 88.15% | 85.30% | 82.05% | 85.05% | 95.23% |
+

@@ -1,24 +1,12 @@
-import os
 import datetime
-from torch.utils.data import DataLoader, Dataset, IterableDataset
 from torch.optim.lr_scheduler import ReduceLROnPlateau, ExponentialLR
 from transformers import AutoModel, AutoTokenizer
 
 from sklearn.metrics import classification_report
 from sklearn.model_selection import StratifiedKFold
-from sklearn.utils import compute_class_weight
 
-from PIL import Image
+from datasets import BertDataset, BertMelDataset, BertMfccDataset
 from common_helpers import *
-
-
-def get_devices():
-    if torch.cuda.is_available():
-        gpu = torch.device("cuda")
-    else:
-        gpu = torch.device("cpu")
-    cpu = torch.device("cpu")
-    return gpu, cpu
 
 
 def load_bert_model(chk_point):
@@ -27,75 +15,6 @@ def load_bert_model(chk_point):
     for param in model.parameters():
         param.requires_grad = False
     return model, tokenizer
-
-
-class BertDataset(Dataset):
-    def __init__(self, sequences, masks, labels):
-        self.sequences = sequences
-        self.masks = masks
-        self.labels = labels
-
-    def __len__(self):
-        return len(self.labels)
-
-    def __getitem__(self, index):
-        return self.sequences[index], self.masks[index], self.labels[index]
-
-    def get_data_loader(self, batch_size=16, random_seed=42):
-        g = torch.Generator()
-        g.manual_seed(random_seed)
-        return DataLoader(self, batch_size=batch_size, generator=g)
-
-
-class BertMelDataset(IterableDataset):
-    def __init__(self, sequences, masks, labels, image_names, image_path, image_width=80, image_height=80):
-        super().__init__()
-        self.sequences = sequences
-        self.masks = masks
-        self.labels = labels
-        self.image_names = image_names
-        self.image_path = image_path
-        self.image_width = image_width
-        self.image_height = image_height
-
-    def __load_image__(self, index):
-        img_path = os.path.join(self.image_path, self.image_names[index])
-        frame = np.asarray(Image.open(img_path))
-        frame_resized = np.array(Image.fromarray(frame).resize((self.image_width, self.image_height)))
-        frame_resized = frame_resized / 255.0
-        return frame_resized
-
-    def __len__(self):
-        return len(self.labels)
-
-    def __iter__(self):
-        for index, _ in enumerate(self.image_names):
-            yield self.sequences[index], self.masks[index], self.__load_image__(index), self.labels[index]
-
-    def __getitem__(self, index):
-        return self.sequences[index], self.masks[index], self.__load_image__(index), self.labels[index]
-
-    def get_data_loader(self, batch_size=16, random_seed=42):
-        g = torch.Generator()
-        g.manual_seed(random_seed)
-        return DataLoader(self, batch_size=batch_size, generator=g)
-
-
-class BertMfccDataset(BertDataset):
-    def __init__(self, sequences, masks, labels, mfcc_data):
-        super().__init__(sequences, masks, labels)
-        self.mfcc_data = mfcc_data
-
-    def __getitem__(self, index):
-        s, m, label = super().__getitem__(index)
-        return s, m, self.mfcc_data[index], label
-
-
-def fusion_layers(aud_model, aud_data, txt_data, fusion_model):
-    a = aud_model(aud_data)
-    txt_data = torch.cat((txt_data, a), dim=1)  # Fusion Layer
-    x = fusion_model(txt_data)
-    return x
 
 
 class BertFineTuningModel(nn.Module):
@@ -327,21 +246,6 @@ def get_model_to_train(fusion, base_model, hidden_dim, seq_len, n_layers, dropou
         is_fusion = False
     model.to(run_on)
     return model, is_fusion
-
-
-def get_loss_function(balance_classes, labels, run_on, loss_fcn=nn.NLLLoss):
-    if balance_classes:
-        class_wts = compute_class_weight('balanced',
-                                         np.unique(labels.tolist()),
-                                         labels.tolist()
-                                         )
-        print(f'Class Weights : {class_wts}')
-        # convert class weights to tensor
-        weights = torch.tensor(class_wts, dtype=torch.float)
-        weights = weights.to(run_on)
-        # loss function
-        loss_fcn = loss_fcn(weight=weights)
-    return loss_fcn
 
 
 def run_k_fold(base_model, device, data, sequences, attention_masks,

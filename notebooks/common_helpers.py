@@ -6,6 +6,7 @@ import torch.nn as nn
 import enum
 
 from sklearn.metrics import precision_score, f1_score, recall_score
+from sklearn.utils import compute_class_weight
 
 
 def get_devices():
@@ -17,10 +18,32 @@ def get_devices():
     return gpu, cpu
 
 
+def get_loss_function(balance_classes, labels, run_on, loss_fcn=nn.NLLLoss):
+    if balance_classes:
+        class_wts = compute_class_weight('balanced',
+                                         np.unique(labels.tolist()),
+                                         labels.tolist()
+                                         )
+        print(f'Class Weights : {class_wts}')
+        # convert class weights to tensor
+        weights = torch.tensor(class_wts, dtype=torch.float)
+        weights = weights.to(run_on)
+        # loss function
+        loss_fcn = loss_fcn(weight=weights)
+    return loss_fcn
+
+
 class FusionTypes(enum.Enum):
     TXT = 0
     MFCC = 1
     MEL = 2
+
+
+def fusion_layers(aud_model, aud_data, txt_data, fusion_model):
+    a = aud_model(aud_data)
+    txt_data = torch.cat((txt_data, a), dim=1)  # Fusion Layer
+    x = fusion_model(txt_data)
+    return x
 
 
 class DummyModel(nn.Module):

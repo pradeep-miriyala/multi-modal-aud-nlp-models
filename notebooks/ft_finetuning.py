@@ -1,76 +1,14 @@
-import os
 import datetime
 import numpy as np
 import torch
 import torch.nn as nn
-from PIL import Image
 from sklearn.metrics import classification_report
 from sklearn.model_selection import StratifiedKFold
-from sklearn.utils import compute_class_weight
 from torch.optim.lr_scheduler import ReduceLROnPlateau, ExponentialLR
-from torch.utils.data import Dataset, DataLoader, IterableDataset
 
-from common_helpers import seq_layer_size, FusionTypes, update_best_result, update_results_dict, results_to_df
-
-
-class FtDataSet(Dataset):
-    def __init__(self, sent_vectors, labels):
-        self.sent_vectors = sent_vectors
-        self.labels = labels
-
-    def __len__(self):
-        return len(self.labels)
-
-    def __getitem__(self, index):
-        return self.sent_vectors[index], self.labels[index]
-
-    def get_data_loader(self, batch_size=16, random_seed=42):
-        g = torch.Generator()
-        g.manual_seed(random_seed)
-        return DataLoader(self, batch_size=batch_size, generator=g)
-
-
-class FtMfccDataSet(FtDataSet):
-    def __init__(self, sent_vectors, labels, mfcc_data):
-        super().__init__(sent_vectors, labels)
-        self.mfcc_data = mfcc_data
-
-    def __getitem__(self, index):
-        s, label = super().__getitem__(index)
-        return s, self.mfcc_data[index], label
-
-
-class FtMelDataset(IterableDataset):
-    def __init__(self, sent_vectors, labels, image_names, image_path, image_width=80, image_height=80):
-        super().__init__()
-        self.sent_vectors = sent_vectors
-        self.labels = labels
-        self.image_names = image_names
-        self.image_path = image_path
-        self.image_width = image_width
-        self.image_height = image_height
-
-    def __load_image__(self, index):
-        img_path = os.path.join(self.image_path, self.image_names[index])
-        frame = np.asarray(Image.open(img_path))
-        frame_resized = np.array(Image.fromarray(frame).resize((self.image_width, self.image_height)))
-        frame_resized = frame_resized / 255.0
-        return frame_resized
-
-    def __len__(self):
-        return len(self.labels)
-
-    def __iter__(self):
-        for index, _ in enumerate(self.image_names):
-            yield self.sent_vectors[index], self.__load_image__(index), self.labels[index]
-
-    def __getitem__(self, index):
-        return self.sent_vectors[index], self.__load_image__(index), self.labels[index]
-
-    def get_data_loader(self, batch_size=16, random_seed=42):
-        g = torch.Generator()
-        g.manual_seed(random_seed)
-        return DataLoader(self, batch_size=batch_size, generator=g)
+from common_helpers import get_loss_function, seq_layer_size, \
+    FusionTypes, update_best_result, update_results_dict, results_to_df
+from datasets import FtDataSet, FtMelDataset, FtMfccDataSet
 
 
 class FtSentVectorsModel(nn.Module):
@@ -276,21 +214,6 @@ def get_model_to_train(fusion, dropout_level, run_on, mfcc_len=41,
         is_fusion = False
     model.to(run_on)
     return model, is_fusion
-
-
-def get_loss_function(balance_classes, labels, run_on, loss_fcn=nn.NLLLoss):
-    if balance_classes:
-        class_wts = compute_class_weight('balanced',
-                                         np.unique(labels.tolist()),
-                                         labels.tolist()
-                                         )
-        print(f'Class Weights : {class_wts}')
-        # convert class weights to tensor
-        weights = torch.tensor(class_wts, dtype=torch.float)
-        weights = weights.to(run_on)
-        # loss function
-        loss_fcn = loss_fcn(weight=weights)
-    return loss_fcn
 
 
 def run_k_fold(device, data, ft_feature, fusion=None, k_folds=5,

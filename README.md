@@ -24,10 +24,11 @@ This repository contains lyrical data, notebooks for analysis of song lyrics wit
 | [Fast Text Embeddings from Pretrained model](notebooks/FT_Vectors_and_MFCC_Fusion.ipynb) | Single Modal (Text) | 94.76% | 94.32% | 94.90% | 94.61% | 94.61% | 94.04% |
 | [Fast Text Embeddings from Pretrained model](notebooks/FT_Vectors_and_MFCC_Fusion.ipynb) | Multi Modal (Text + MFCC) | 94.15% | 94.29% | 95.82% | 94.57% | 92.53% | 94.01% |
 | [Fast Text Embeddings from Pretrained model](notebooks/FT_Vectors_and_MFCC_Fusion.ipynb) | Multi Modal (Text + MEL) | 92.61% | 94.04% | 92.54% | 93.49% | 92.68% | 94.61% |
-| [Indic Fast Text Embeddings from Pretrained model](notebooks/FT_Vectors_and_MFCC_Fusion.ipynb)* | Single Modal (Text) | 80% | 80% | 80% | 80% | 90% | 90% |
-| [Indic Fast Text Embeddings from Pretrained model](notebooks/FT_Vectors_and_MFCC_Fusion.ipynb)* | Multi Modal (Text + MFCC) | 80% | 80% | 70% | 70% | 100% | 100% |
+| [Indic Fast Text Embeddings from Pretrained model](notebooks/Indic_FT_Simplified.ipynb) | Single Modal (Text) | 88.56% | 93.84% | 91.00% | 92.48% | 86.24% | 95.23% |
+| [Indic Fast Text Embeddings from Pretrained model](notebooks/Indic_FT_Simplified.ipynb) | Multi Modal (Text + MFCC) | 91.14% | 93.52% | 92.33% | 92.44% | 89.98% | 94.64% |
+| [Indic Fast Text Embeddings from Pretrained model](notebooks/Indic_FT_Simplified.ipynb) | Multi Modal (Text + MEL) | 87.45% | 93.80% | 90.15% | 92.98% | 84.90% | 94.64% |
 
-## [LSTM Model from Word Embeddings](notebooks/LSTM_Model.ipynb)
+## LSTM Model from Word Embeddings
 | Model | Type | Training F1 | Test F1 | Training Precision | Test Precision | Training Recall | Test Recall |
 | -- | -- | -- | -- | -- | -- | -- | -- |
 | [LSTM Model](notebooks/LSTM_Simplified.ipynb) | Single Modal (Text) | 82.37% | 82.03% | 87.41% | 74.63% | 77.87% | 91.07% |

@@ -37,6 +37,7 @@ Each song is annotated with its Raga name.
 | [Feed Forward 25% Dropout](Raga_Analysis_Experiments.ipynb) | Single Modal | 81.90% | 7.45% | 81.90% | 7.45% | 81.90% | 7.45% |
 | [Feed Forward 40% Dropout](Raga_Analysis_Experiments.ipynb) | Single Modal | 38.37% | 6.14% | 38.37% | 6.14% | 38.37% | 6.14% |
 | | | 67.32% | 4.82% | 67.32% | 4.82% | 67.32% | 4.82% |
+| [Feed Forward 10% Dropout](Raga_Analysis_Audio_and_Text_Fusion.ipynb) | Multi Modal (FT Vectors) | 99.56% | 11.40% | 99.56% | 11.40% | 99.56% | 11.40% |
 | [Multi Nomial Naive Bayes Classification](Raga_Analysis_Experiments.ipynb) | Single Modal | 10.92% | 9.12% | 10.92% | 9.12% | 10.92% | 9.12% |
 | [Bernoulli Naive Bayes Classification](Raga_Analysis_Experiments.ipynb) | Single Modal | 12.39% | 8.42% | 12.39% | 8.42% | 12.39% | 8.42% |
 | [Random Forest Classifier](Raga_Analysis_Experiments.ipynb) | Single Modal | 98.85% | 8.33% | 98.85% | 8.33% | 98.85% | 8.33% |
@@ -52,10 +53,12 @@ Each song is annotated with its Raga name.
 | Model | Type | Training F1 | Test F1 | Training Precision | Test Precision | Training Recall | Test Recall |
 | -- | -- | -- | -- | -- | -- | -- | -- |
 | [Feed Forward 10% Dropout](Raga_Analysis_Experiments.ipynb) | Single Modal | 99.89% | 9.69% | 99.89% | 9.69% | 99.89% | 9.69% |
+| [Feed Forward 10% Dropout](Raga_Analysis_Audio_and_Text_Fusion.ipynb) | Multi Modal (FT Vectors) | 9.87% | 8.77% | 9.87% | 8.77% | 9.87% | 8.77% |
 | [Feed Forward 25% Dropout](Raga_Analysis_Experiments.ipynb) | Single Modal | 66.88% | 7.92% | 66.88% | 7.92% | 66.88% | 7.92% |
 | | | 98.02% | 7.92% | 98.02% | 7.92% | 98.02% | 7.92% |
 | [Feed Forward 40% Dropout](Raga_Analysis_Experiments.ipynb) | Single Modal | 95.83% | 7.92% | 95.83% | 7.92% | 95.83% | 7.92% |
 | [2 Layer LSTM with 10% Dropout](Raga_Analysis_Experiments.ipynb) | Single Modal | 74.86% | 7.89% | 74.86% | 7.89% | 74.86% | 7.89% |
+| [2 Layer LSTM with 10% Dropout](Raga_Analysis_Experiments.ipynb) | Multi Modal (FT Vectors) | 44.78% | 7.89% | 44.78% | 7.89% | 44.78% | 7.89% |
 | [2 Layer LSTM with 25% Dropout](Raga_Analysis_Experiments.ipynb) | Single Modal | 53.78% | 6.14% | 53.78% | 6.14% | 53.78% | 6.14% |
 | [2 Layer LSTM with 40% Dropout](Raga_Analysis_Experiments.ipynb) | Single Modal | 31.50% | 5.70% | 31.50% | 5.70% | 31.50% | 5.70% |
 | | | 47.03% | 4.40% | 47.03% | 4.40% | 47.03% | 4.40% |

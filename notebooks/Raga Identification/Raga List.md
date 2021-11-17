@@ -3,7 +3,7 @@ List of Ragas
 | Ragam | # Samples | Type | Janaka Ragam | Reference | Arohana | Avarohana |
 |:----------:|:-------:|:------------------:|:--------:|:--------:|:--------:|:--------:|
 | లలిత | 98 | Janya | Mayamalavagowla | Wiki |S R₁ G₃ M₁ D₁ N₃ Ṡ|Ṡ N₃ D₁ M₁ G₃ R₁ S|
-| *సాళంగనాట* | 94 | Janya | Mayamalavagowla | http://epgp.inflibnet.ac.in/epgpdata/uploads/epgp_content/s000451pa/p001552/m018110/et/1481009511p5m18text.pdf | సరిమపదస | సదపసనిసగపమగరిస |
+| *సాళంగనాట* | 94 | Janya | Mayamalavagowla | http://epgp.inflibnet.ac.in/epgpdata/uploads/epgp_content/s000451pa/p001552/m018110/et/1481009511p5m18text.pdf | S R M P D S | S D P S N S G P M G R S |
 | సామంతం | 89 | Janya | Naganandini | https://www.atyutka.com/samantha-raga/ | S R₂ G₃ M₁ P D₃ N₃ S | S N₃ D₃ N₃ D₃ P M₁ G₃ R₂ S |
 | బౌళి | 70 | Janya | Mayamalavagowla | Wiki | S R₁ G₃ P D₁ S | S N₃ D₁ P G₃ R₁ S |
 | శంకరాభరణం | 68 | Janaka| Shankarabharanam | Wiki | S R2 G3 M1 P D2 N3 S | S N3 D2 P M1 G3 R2 S |

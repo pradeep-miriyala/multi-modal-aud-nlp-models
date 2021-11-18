@@ -65,3 +65,19 @@
 | Shubhapantuvarali |<table><tr><td>488</td><td>32</td></tr><tr><td>4</td><td>12</td></tr></table>|<table><tr><td>387</td><td>134</td></tr><tr><td>12</td><td>4</td></tr></table>|
 | Vakulabharanam |<table><tr><td>479</td><td>35</td></tr><tr><td>10</td><td>13</td></tr></table>|<table><tr><td>285</td><td>229</td></tr><tr><td>9</td><td>13</td></tr></table>|
 
+## MEL Spectrogram Janaka Ragas W/O Mayamalavagowla LSTM 2 Fold
+| Ragam | Confusion Matrix Train | Confusion Matrix Test |
+|:---:|:---:|:----:|
+| Chalanata |<table><tr><td>290</td><td>1</td></tr><tr><td>4</td><td>9</td></tr></table>|<table><tr><td>288</td><td>4</td></tr><tr><td>12</td><td>0</td></tr></table>|
+| Hanumatodi |<table><tr><td>285</td><td>9</td></tr><tr><td>4</td><td>6</td></tr></table>|<table><tr><td>291</td><td>3</td></tr><tr><td>10</td><td>0</td></tr></table>|
+| Harikambhoji |<table><tr><td>240</td><td>31</td></tr><tr><td>12</td><td>21</td></tr></table>|<table><tr><td>214</td><td>57</td></tr><tr><td>25</td><td>8</td></tr></table>|
+| Jhalavarali |<table><tr><td>291</td><td>2</td></tr><tr><td>3</td><td>8</td></tr></table>|<table><tr><td>292</td><td>1</td></tr><tr><td>11</td><td>0</td></tr></table>|
+| Kalyani | <table><tr><td>298</td><td>1</td></tr><tr><td>1</td><td>4</td></tr></table>|<table><tr><td>298</td><td>0</td></tr><tr><td>6</td><td>0</td></tr></table>|
+| Kharaharapriya |<table><tr><td>176</td><td>60</td></tr><tr><td>22</td><td>46</td></tr></table>|<table><tr><td>175</td><td>62</td></tr><tr><td>48</td><td>19</td></tr></table>|
+| Naganandini |<table><tr><td>141</td><td>118</td></tr><tr><td>31</td><td>14</td></tr></table>|<table><tr><td>180</td><td>80</td></tr><tr><td>30</td><td>14</td></tr></table>|
+| Natabhairavi |<table><tr><td>285</td><td>6</td></tr><tr><td>6</td><td>7</td></tr></table>|<table><tr><td>281</td><td>9</td></tr><tr><td>14</td><td>0</td></tr></table>|
+| Shankarabharanam |<table><tr><td>152</td><td>84</td></tr><tr><td>46</td><td>22</td></tr></table>|<table><tr><td>183</td><td>53</td></tr><tr><td>51</td><td>17</td></tr></table>|
+| Shubhapantuvarali |<table><tr><td>281</td><td>7</td></tr><tr><td>3</td><td>13</td></tr></table>|<table><tr><td>282</td><td>6</td></tr><tr><td>16</td><td>0</td></tr></table>|
+| Vakulabharanam |<table><tr><td>218</td><td>63</td></tr><tr><td>19</td><td>4</td></tr></table>|<table><tr><td>267</td><td>15</td></tr><tr><td>22</td><td>0</td></tr></table>|
+
+

@@ -12,6 +12,7 @@ from sklearn.model_selection import StratifiedKFold
 from sklearn.utils import compute_class_weight
 from torch.optim.lr_scheduler import ReduceLROnPlateau, ExponentialLR
 from torch.utils.data import IterableDataset, DataLoader
+from IPython.display import display, HTML
 
 
 def get_devices():
@@ -40,40 +41,52 @@ def get_loss_function(balance_classes, labels, run_on, loss_fcn=nn.CrossEntropyL
     return loss_fcn
 
 
-def update_best_result(best_scores, valid_loss, train_labels, train_predictions, test_labels, test_predictions,
+def update_best_result(best_scores, valid_loss, train_labels, train_predictions, validation_labels,
+                       validation_predictions,
                        model=None, model_file_name=f'saved_weights_Fold_0.pt'):
     if valid_loss < best_scores['valid_loss']:
         best_scores['valid_loss'] = valid_loss
         best_scores['train_predictions'] = train_predictions
-        best_scores['test_predictions'] = test_predictions
+        best_scores['validation_predictions'] = validation_predictions
         best_scores['train_labels'] = train_labels
-        best_scores['test_labels'] = test_labels
+        best_scores['validation_labels'] = validation_labels
         if model:
             torch.save(model.state_dict(), model_file_name)
     return best_scores
 
 
-def update_results_dict(results, train_labels, train_predictions, test_labels, test_predictions,
+def update_results_dict(results, train_labels, train_predictions, validation_labels, validation_predictions,
                         average='binary', pos_label=1):
     results['train_precision'].append(precision_score(train_labels, train_predictions, average=average,
                                                       pos_label=pos_label))
     results['train_recall'].append(recall_score(train_labels, train_predictions, average=average, pos_label=pos_label))
     results['train_f1'].append(f1_score(train_labels, train_predictions, average=average, pos_label=pos_label))
-    results['validation_precision'].append(precision_score(test_labels, test_predictions, average=average,
+    results['validation_precision'].append(precision_score(validation_labels, validation_predictions, average=average,
                                                            pos_label=pos_label))
-    results['validation_recall'].append(recall_score(test_labels, test_predictions, average=average,
+    results['validation_recall'].append(recall_score(validation_labels, validation_predictions, average=average,
                                                      pos_label=pos_label))
-    results['validation_f1'].append(f1_score(test_labels, test_predictions, average=average, pos_label=pos_label))
+    results['validation_f1'].append(
+        f1_score(validation_labels, validation_predictions, average=average, pos_label=pos_label))
     results['train_labels'].append([train_labels])
-    results['test_labels'].append([test_labels])
+    results['validation_labels'].append([validation_labels])
     results['train_predictions'].append([train_predictions])
-    results['test_predictions'].append([test_predictions])
+    results['validation_predictions'].append([validation_predictions])
     return results
 
 
 def run_model(model, dataset, loss_fcn, optimizer, is_training, run_on, clip_at=None, lstm_model=False, report_at=20):
-    predict = lambda mdl, data, hidden: mdl(data, hidden) if hidden else mdl(data)
-    hid = lambda mdl, data, _run_on, is_lstm: mdl.init_hidden(data.shape[0], _run_on) if is_lstm else None
+    def predict(mdl, data, hidden):
+        if hidden:
+            return mdl(data, hidden)
+        else:
+            return mdl(data)
+
+    def hid(mdl, data, _run_on, is_lstm):
+        if is_lstm:
+            return mdl.init_hidden(data.shape[0], _run_on)
+        else:
+            return None
+
     if is_training:
         model.train()
     else:
@@ -117,7 +130,7 @@ def run_model(model, dataset, loss_fcn, optimizer, is_training, run_on, clip_at=
     model_labels = np.concatenate(model_labels, axis=0)
     # returns the loss and predictions
     model_predictions = np.argmax(model_predictions, axis=1)
-    return avg_loss, model_predictions, model_labels, model
+    return avg_loss, model_predictions, model_labels
 
 
 def plot_results(results, model_name):
@@ -163,11 +176,11 @@ class AbsDataset(IterableDataset, ABC):
 
 
 def train_model(data, prepare_data_hnd, gpu, **kwargs):
-    torch.manual_seed(42)
     start_time = datetime.datetime.now()
 
     n_labels = kwargs['n_labels']
     title = kwargs['title']
+    random_seed = kwargs['random_seed'] if 'random_seed' in kwargs else 42
     report = kwargs['report'] if 'report' in kwargs else 20
     lstm = kwargs['lstm'] if 'lstm' in kwargs else False
     lr = kwargs['lr'] if 'lr' in kwargs else 1e-4
@@ -181,26 +194,28 @@ def train_model(data, prepare_data_hnd, gpu, **kwargs):
     feature = kwargs['feature'] if 'feature' in kwargs else ['mfcc_mean']
     target = kwargs['target'] if 'target' in kwargs else 'RagamCode'
     loss_fcn = kwargs['loss_fcn'] if 'loss_fcn' in kwargs else None
+    model_name = kwargs['model_name'] if 'model_name' in kwargs else 'model_state.pt'
+    batch_size = kwargs['batch_size'] if 'batch_size' in kwargs else 32
 
-    k_fold = StratifiedKFold(n_splits=k_folds, shuffle=True, random_state=42)
+    torch.manual_seed(random_seed)
+    k_fold = StratifiedKFold(n_splits=k_folds, shuffle=True, random_state=random_seed)
     results = {x: {} for x in range(k_folds)}
-    labels = data[target]
     ovl_best_scores = {'valid_loss': float('inf'),
                        'train_predictions': [],
-                       'test_predictions': [],
+                       'validation_predictions': [],
                        'train_labels': [],
-                       'test_labels': []
+                       'validation_labels': []
                        }
-    for fold, (train_ids, test_ids) in enumerate(k_fold.split(data[feature], data[target])):
-        print(f'FOLD {fold + 1} \n Data Sizes (Train/Test) : {len(train_ids)}/{len(test_ids)}')
+    for fold, (train_ids, validation_ids) in enumerate(k_fold.split(data[feature], data[target])):
+        print(f'FOLD {fold + 1} \n Data Sizes (Train/Test) : {len(train_ids)}/{len(validation_ids)}')
         fold_start = datetime.datetime.now()
         # empty lists to store training and validation loss of each epoch
         train_losses, valid_losses = [], []
         best_scores = {'valid_loss': float('inf'),
                        'train_predictions': [],
-                       'test_predictions': [],
+                       'validation_predictions': [],
                        'train_labels': [],
-                       'test_labels': []
+                       'validation_labels': []
                        }
         # for each epoch
         results[fold] = {
@@ -211,11 +226,11 @@ def train_model(data, prepare_data_hnd, gpu, **kwargs):
             'train_recall': [],
             'validation_recall': [],
             'train_labels': [],
-            'test_labels': [],
+            'validation_labels': [],
             'train_predictions': [],
-            'test_predictions': []
+            'validation_predictions': []
         }
-        train_data, test_data, train_labels, test_labels = prepare_data_hnd(data, train_ids, test_ids)
+        train_data, validation_data, train_labels, validation_labels = prepare_data_hnd(data, train_ids, validation_ids)
         model = kwargs['model'](n_labels, dropout=dropout, **mdlargs)
         model.to(gpu)
         if not loss_fcn:
@@ -227,17 +242,18 @@ def train_model(data, prepare_data_hnd, gpu, **kwargs):
         for epoch in range(epochs):
             e_start = datetime.datetime.now()
             # train model
-            train_loss, train_predictions, train_labels, model = run_model(model,
-                                                                           train_data.get_data_loader(batch_size=32),
-                                                                           loss_fcn, optimizer, run_on=gpu,
-                                                                           is_training=True, clip_at=clip_at,
-                                                                           lstm_model=lstm, report_at=report)
+            train_loss, train_predictions, train_labels = run_model(model,
+                                                                    train_data.get_data_loader(batch_size=batch_size),
+                                                                    loss_fcn, optimizer, run_on=gpu,
+                                                                    is_training=True, clip_at=clip_at,
+                                                                    lstm_model=lstm, report_at=report)
             # evaluate model
-            valid_loss, test_predictions, test_labels, model = run_model(model,
-                                                                         test_data.get_data_loader(batch_size=32),
-                                                                         loss_fcn, optimizer, run_on=gpu,
-                                                                         is_training=False, clip_at=clip_at,
-                                                                         lstm_model=lstm, report_at=report)
+            valid_loss, validation_predictions, validation_labels = run_model(model,
+                                                                              validation_data.get_data_loader(
+                                                                                  batch_size=batch_size),
+                                                                              loss_fcn, optimizer, run_on=gpu,
+                                                                              is_training=False, clip_at=clip_at,
+                                                                              lstm_model=lstm, report_at=report)
             for lr_scheduler in lr_schedulers:
                 lr_scheduler.step(valid_loss)
             torch.cuda.empty_cache()
@@ -245,35 +261,37 @@ def train_model(data, prepare_data_hnd, gpu, **kwargs):
             best_scores = update_best_result(best_scores,
                                              valid_loss,
                                              train_labels, train_predictions,
-                                             test_labels, test_predictions)
+                                             validation_labels, validation_predictions)
             ovl_best_scores = update_best_result(ovl_best_scores,
                                                  valid_loss,
                                                  train_labels, train_predictions,
-                                                 test_labels, test_predictions,
+                                                 validation_labels, validation_predictions,
                                                  model=model,
-                                                 model_file_name=f'saved_weights_Fold_{fold}.pt')
+                                                 model_file_name=f'{model_name}')
             # append training and validation loss
             train_losses.append(train_loss)
             valid_losses.append(valid_loss)
             results[fold] = update_results_dict(results[fold],
                                                 train_labels, train_predictions,
-                                                test_labels, test_predictions)
+                                                validation_labels, validation_predictions)
             e_end = datetime.datetime.now()
             print(
-                f'Epoch {epoch + 1}/{epochs} : Training Loss: {train_loss:.3f} / Validation Loss : {valid_loss:.3f} [Time Taken : {(e_end - e_start).total_seconds()} seconds]')
+                f'Epoch {epoch + 1}/{epochs} : Training Loss: {train_loss:.3f} / Validation Loss : {valid_loss:.3f} [Time : {(e_end - e_start).total_seconds()} seconds]')
         print('*** Confusion Matrix - Training ***')
         print(confusion_matrix(best_scores['train_labels'], best_scores['train_predictions']))
         print('*** Confusion Matrix - Validation ***')
-        print(confusion_matrix(best_scores['test_labels'], best_scores['test_predictions']))
+        print(confusion_matrix(best_scores['validation_labels'], best_scores['validation_predictions']))
         results[fold]['train_losses'] = train_losses
         results[fold]['validation_losses'] = valid_losses
         print(f'Fold {fold + 1} : {(datetime.datetime.now() - fold_start).total_seconds()} seconds')
+        # To ensure CUDA is not overloaded
+        del model
     end_time = datetime.datetime.now()
     print(f'Overall Time : {(end_time - start_time).total_seconds()} seconds')
     print('*** Confusion Matrix - Training ***')
     print(confusion_matrix(ovl_best_scores['train_labels'], ovl_best_scores['train_predictions']))
     print('*** Confusion Matrix - Validation ***')
-    print(confusion_matrix(ovl_best_scores['test_labels'], ovl_best_scores['test_predictions']))
+    print(confusion_matrix(ovl_best_scores['validation_labels'], ovl_best_scores['validation_predictions']))
     if plot:
         plot_results(results, title)
     return results
@@ -283,5 +301,46 @@ def results_to_df(results):
     p = pd.DataFrame(results[0])
     for i in range(1, len(results)):
         p = pd.concat([p, pd.DataFrame(results[i])], axis=0)
-    p.sort_values(by=['validation_f1','train_f1'], ascending=False, inplace=True)
+    p.sort_values(by=['validation_f1', 'train_f1'], ascending=False, inplace=True)
     return p
+
+
+def create_results_table(overall, le, n_results=1, display_results=True, display_train=True):
+    df = pd.DataFrame(
+        columns=['Raga', 'train_confusion', 'validation_confusion'] + list(overall[list(overall.keys())[0]][1].keys()))
+    idx = 0
+    for item in overall:
+        # Get top "n_results"
+        tmp = results_to_df(overall[item]).head(n_results)
+        for _ in range(n_results):
+            df.loc[idx, 'Raga'] = le.inverse_transform([item])[0]
+            for i in tmp.columns:
+                df.loc[idx, i] = tmp[i].tolist()[_]
+            t = confusion_matrix(df.loc[idx, 'train_labels'][0], df.loc[idx, 'train_predictions'][0])
+            df.loc[idx, 'train_confusion'] = str(t[0]) + '\n' + str(t[1])
+            t = confusion_matrix(df.loc[idx, 'validation_labels'][0], df.loc[idx, 'validation_predictions'][0])
+            df.loc[idx, 'validation_confusion'] = str(t[0]) + '\n' + str(t[1])
+            idx = idx + 1
+    df.index = df['Raga']
+    if display_results:
+        if display_train:
+            cols_to_display = ['Raga', 'train_confusion', 'validation_confusion', 'train_f1', 'validation_f1',
+                               'train_precision', 'validation_precision', 'train_recall', 'validation_recall']
+        else:
+            cols_to_display = ['Raga', 'validation_confusion',
+                               'validation_f1', 'validation_precision', 'validation_recall']
+        display(HTML(df[cols_to_display].to_html().replace("\\n", "<br>")))
+    return df
+
+
+def bar_plot(df, metric, title=None, fig_size=None):
+    if fig_size is None:
+        fig_size = [20, 5]
+    if title is None:
+        title = f'{metric} values'
+    cols = [f'train_{metric}', f'validation_{metric}']
+    df[cols].plot.bar(figsize=fig_size, grid=True)
+    plt.title(title)
+    plt.legend(['Train', 'Validation'])
+    plt.xticks(rotation=45)
+    plt.show()

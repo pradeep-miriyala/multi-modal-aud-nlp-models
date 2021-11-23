@@ -53,13 +53,21 @@ def update_best_result(best_scores, valid_loss, train_labels, train_predictions,
     return best_scores
 
 
-def update_results_dict(results, train_labels, train_predictions, test_labels, test_predictions, average='micro'):
-    results['train_precision'].append(precision_score(train_labels, train_predictions, average=average))
-    results['train_recall'].append(recall_score(train_labels, train_predictions, average=average))
-    results['train_f1'].append(f1_score(train_labels, train_predictions, average=average))
-    results['validation_precision'].append(precision_score(test_labels, test_predictions, average=average))
-    results['validation_recall'].append(recall_score(test_labels, test_predictions, average=average))
-    results['validation_f1'].append(f1_score(test_labels, test_predictions, average=average))
+def update_results_dict(results, train_labels, train_predictions, test_labels, test_predictions,
+                        average='binary', pos_label=1):
+    results['train_precision'].append(precision_score(train_labels, train_predictions, average=average,
+                                                      pos_label=pos_label))
+    results['train_recall'].append(recall_score(train_labels, train_predictions, average=average, pos_label=pos_label))
+    results['train_f1'].append(f1_score(train_labels, train_predictions, average=average, pos_label=pos_label))
+    results['validation_precision'].append(precision_score(test_labels, test_predictions, average=average,
+                                                           pos_label=pos_label))
+    results['validation_recall'].append(recall_score(test_labels, test_predictions, average=average,
+                                                     pos_label=pos_label))
+    results['validation_f1'].append(f1_score(test_labels, test_predictions, average=average, pos_label=pos_label))
+    results['train_labels'].append([train_labels])
+    results['test_labels'].append([test_labels])
+    results['train_predictions'].append([train_predictions])
+    results['test_predictions'].append([test_predictions])
     return results
 
 
@@ -201,7 +209,11 @@ def train_model(data, prepare_data_hnd, gpu, **kwargs):
             'train_precision': [],
             'validation_precision': [],
             'train_recall': [],
-            'validation_recall': []
+            'validation_recall': [],
+            'train_labels': [],
+            'test_labels': [],
+            'train_predictions': [],
+            'test_predictions': []
         }
         train_data, test_data, train_labels, test_labels = prepare_data_hnd(data, train_ids, test_ids)
         model = kwargs['model'](n_labels, dropout=dropout, **mdlargs)
@@ -233,13 +245,13 @@ def train_model(data, prepare_data_hnd, gpu, **kwargs):
             best_scores = update_best_result(best_scores,
                                              valid_loss,
                                              train_labels, train_predictions,
-                                             test_labels, test_predictions,
-                                             model=model,
-                                             model_file_name=f'saved_weights_Fold_{fold}.pt')
+                                             test_labels, test_predictions)
             ovl_best_scores = update_best_result(ovl_best_scores,
                                                  valid_loss,
                                                  train_labels, train_predictions,
-                                                 test_labels, test_predictions)
+                                                 test_labels, test_predictions,
+                                                 model=model,
+                                                 model_file_name=f'saved_weights_Fold_{fold}.pt')
             # append training and validation loss
             train_losses.append(train_loss)
             valid_losses.append(valid_loss)
@@ -271,5 +283,5 @@ def results_to_df(results):
     p = pd.DataFrame(results[0])
     for i in range(1, len(results)):
         p = pd.concat([p, pd.DataFrame(results[i])], axis=0)
-    p.sort_values(by='validation_f1', ascending=False, inplace=True)
+    p.sort_values(by=['validation_f1','train_f1'], ascending=False, inplace=True)
     return p

@@ -30,9 +30,15 @@ def load_models(models, model_class, **model_args):
 
 def predict(model_banks, spec):
     models = {k: predict_probabilities(model_banks[k], spec) for k in model_banks}
-    predictions = pd.DataFrame(models).transpose().sort_values(by=1, ascending=False)
+    df = pd.DataFrame(models).transpose()
+    predictions = df.sort_values(by=1, ascending=False)
     return predictions
 
 
-def get_raga_name(predictions):
-    return predictions.head(1)[1].index[0], predictions.head(1)[1][predictions.head(1)[1].index[0]]
+def get_raga_name(predictions, original=None):
+    name = predictions.head(1)[1].index[0]
+    confidence = predictions.head(1)[1][predictions.head(1)[1].index[0]]
+    if original:
+        return name, confidence, predictions.loc[original, 1]
+    else:
+        return name, confidence

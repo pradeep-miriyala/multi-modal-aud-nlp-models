@@ -2,7 +2,7 @@ import datetime
 import numpy as np
 import torch
 import torch.nn as nn
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.model_selection import StratifiedKFold
 from torch.optim.lr_scheduler import ReduceLROnPlateau, ExponentialLR
 
@@ -17,7 +17,6 @@ class FtSentVectorsModel(nn.Module):
         self.FT_VEC_SIZE = 300
         self.fc = nn.Sequential(
             nn.Linear(300, 512), nn.ReLU(), nn.Dropout(dropout_level),
-            nn.Linear(512, 512), nn.ReLU(), nn.Dropout(dropout_level),
             nn.Linear(512, 1024), nn.ReLU(), nn.Dropout(dropout_level)
         )
         self.final = nn.Linear(1024, 2)
@@ -119,10 +118,8 @@ class FtMelFusionModel(FtSentVectorsModel):
 
 def run_model(model, dataset, loss_fcn, optimizer, is_training, run_on, clip_at=None, is_fusion=False):
     if is_training:
-        print('Training Model')
         model.train()
     else:
-        print('Evaluating')
         model.eval()
     total_loss, total_accuracy = 0, 0
     # empty list to save model predictions
@@ -130,8 +127,6 @@ def run_model(model, dataset, loss_fcn, optimizer, is_training, run_on, clip_at=
     # iterate over batches
     aud_data = None
     for step, batch in enumerate(dataset):
-        if step % 50 == 0 and not step == 0:
-            print('  Batch {:>5,}  of  {:>5,}.'.format(step, len(dataset)))
         # push the batch to gpu
         batch = [r.to(run_on) for r in batch]
         if is_fusion:
@@ -261,7 +256,6 @@ def run_k_fold(device, data, ft_feature, fusion=None, k_folds=5,
                          ExponentialLR(optimizer, 0.9)]
         for epoch in range(epochs):
             e_start = datetime.datetime.now()
-            print('Epoch {:} / {:}'.format(epoch + 1, epochs))
             # train model
             train_loss, train_predictions, train_labels, model = run_model(model,
                                                                            train_data.get_data_loader(),
@@ -280,7 +274,6 @@ def run_k_fold(device, data, ft_feature, fusion=None, k_folds=5,
                                                                          is_training=False,
                                                                          clip_at=clip_at,
                                                                          is_fusion=is_fusion)
-            print(f'Losses - Train : {train_loss:.3f} / Validation : {valid_loss:.3f}')
             for lr_scheduler in lr_schedulers:
                 lr_scheduler.step(valid_loss)
             torch.cuda.empty_cache()
@@ -298,11 +291,11 @@ def run_k_fold(device, data, ft_feature, fusion=None, k_folds=5,
                                                 train_labels, train_predictions,
                                                 test_labels, test_predictions)
             e_end = datetime.datetime.now()
-            print(f'Time for epoch : {(e_end - e_start).total_seconds()} seconds')
+            print(f'Epoch {epoch+1} / {epochs}, Train Loss : {train_loss:.3f} / Validation Loss : {valid_loss:.3f} [Time: {(e_end - e_start).total_seconds()} seconds]')
         print('On Train Data')
-        print(classification_report(best_scores['train_labels'], best_scores['train_predictions']))
+        print(confusion_matrix(best_scores['train_labels'], best_scores['train_predictions']))
         print('On Test Data')
-        print(classification_report(best_scores['test_labels'], best_scores['test_predictions']))
+        print(confusion_matrix(best_scores['test_labels'], best_scores['test_predictions']))
         results[fold]['train_losses'] = train_losses
         results[fold]['validation_losses'] = valid_losses
         print(f'Time for fold {fold} : {(datetime.datetime.now() - fold_start).total_seconds()} seconds')

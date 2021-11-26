@@ -20,9 +20,9 @@ def get_devices():
 
 def get_loss_function(balance_classes, labels, run_on, loss_fcn=nn.NLLLoss):
     if balance_classes:
-        class_wts = compute_class_weight('balanced',
-                                         np.unique(labels.tolist()),
-                                         labels.tolist()
+        class_wts = compute_class_weight(class_weight='balanced',
+                                         classes=np.unique(labels.tolist()),
+                                         y=labels.tolist()
                                          )
         print(f'Class Weights : {class_wts}')
         # convert class weights to tensor
@@ -30,6 +30,8 @@ def get_loss_function(balance_classes, labels, run_on, loss_fcn=nn.NLLLoss):
         weights = weights.to(run_on)
         # loss function
         loss_fcn = loss_fcn(weight=weights)
+    else:
+        loss_fcn = loss_fcn()
     return loss_fcn
 
 

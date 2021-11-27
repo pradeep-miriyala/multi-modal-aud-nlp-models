@@ -1,4 +1,4 @@
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.model_selection import StratifiedKFold
 from torch.optim.lr_scheduler import ReduceLROnPlateau, ExponentialLR
 
@@ -8,16 +8,19 @@ from datasets import LstmDataset, LstmMfccDataset, LstmMelDataset
 
 
 class LstmModel(nn.Module):
-    def __init__(self, vocab_size, embedding_dim, hidden_dim, seq_len, n_layers=6, dropout_level=0.1):
+    def __init__(self, vocab_size, embedding_dim, hidden_dim, seq_len, n_layers=6, bidir=False, dropout_level=0.1, max_norm=2):
         super().__init__()
         self.n_layers = n_layers
         self.hidden_dim = hidden_dim
         self.seq_len = seq_len
-        self.embedding = nn.Embedding(vocab_size, embedding_dim)
+        self.embedding = nn.Embedding(vocab_size, embedding_dim, max_norm=max_norm)
+        self.bidir = bidir
         self.lstm = nn.LSTM(embedding_dim, hidden_dim, self.n_layers, dropout=dropout_level, batch_first=True,
-                            bidirectional=True)
-        self.fc = nn.Linear(2 * hidden_dim, 2)
-        self.softmax = nn.LogSoftmax(dim=0)
+                            bidirectional=self.bidir)
+        if self.bidir:
+            self.fc = nn.Sequential(nn.Linear(2 * hidden_dim, 2), nn.LogSoftmax(dim=0))
+        else:
+            self.fc = nn.Sequential(nn.Linear(hidden_dim, 2), nn.LogSoftmax(dim=0))
 
     def forward(self, x, hidden):
         batch_size = x.size(0)
@@ -27,14 +30,17 @@ class LstmModel(nn.Module):
         x_reverse = lstm_out[:, 0, self.hidden_dim:]
         x = torch.cat((x_forward, x_reverse), 1)
         x = self.fc(x)
-        x = self.softmax(x)
         x = x.view(batch_size, -1)
         return x
 
     def init_hidden(self, batch_size, target_device):
         weight = next(self.parameters()).data
-        hidden = (weight.new(2 * self.n_layers, batch_size, self.hidden_dim).zero_().to(target_device),
-                  weight.new(2 * self.n_layers, batch_size, self.hidden_dim).zero_().to(target_device))
+        if self.bidir:
+            hidden = (weight.new(2 * self.n_layers, batch_size, self.hidden_dim).zero_().to(target_device),
+                      weight.new(2 * self.n_layers, batch_size, self.hidden_dim).zero_().to(target_device))
+        else:
+            hidden = (weight.new(self.n_layers, batch_size, self.hidden_dim).zero_().to(target_device),
+                      weight.new(self.n_layers, batch_size, self.hidden_dim).zero_().to(target_device))
         return hidden
 
 
@@ -159,8 +165,6 @@ def run_model(model, data_loader, loss_fcn, optimizer, target_device, is_trainin
     # iterate over batches
     aud_data = None
     for step, batch in enumerate(data_loader):
-        if step % 50 == 0 and not step == 0:
-            print('  Batch {:>5,}  of  {:>5,}.'.format(step, len(data_loader)))
         # push the batch to gpu
         batch = [r.to(target_device) for r in batch]
         if is_fusion:
@@ -186,7 +190,8 @@ def run_model(model, data_loader, loss_fcn, optimizer, target_device, is_trainin
         total_loss = total_loss + loss.item()
         if is_training:
             loss.backward()  # backward pass to calculate the gradients
-            torch.nn.utils.clip_grad_norm_(model.parameters(), clip_at)
+            if clip_at:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), clip_at)
             # update parameters
             optimizer.step()
         predictions = predictions.detach().cpu().numpy()
@@ -205,7 +210,7 @@ def run_model(model, data_loader, loss_fcn, optimizer, target_device, is_trainin
 
 
 def get_model_to_train(fusion, vocab_size, embedding_dim, hidden_dim, seq_len, n_layers, dropout_level,
-                       run_on, mfcc_len=41, img_height=80, img_width=80):
+                       run_on, mfcc_len=41, img_height=80, img_width=80, bidir=False, max_norm=2):
     if fusion == FusionTypes.MFCC:
         model = LstmMfccModel(vocab_size, embedding_dim, hidden_dim, seq_len,
                               fusion=True, n_layers=n_layers, dropout_level=dropout_level,
@@ -218,7 +223,7 @@ def get_model_to_train(fusion, vocab_size, embedding_dim, hidden_dim, seq_len, n
         is_fusion = True
     else:
         model = LstmModel(vocab_size, embedding_dim, hidden_dim, seq_len,
-                          n_layers=n_layers, dropout_level=dropout_level)
+                          n_layers=n_layers, dropout_level=dropout_level, bidir=bidir, max_norm=max_norm)
         is_fusion = False
     model.to(run_on)
     return model, is_fusion
@@ -257,7 +262,7 @@ def run_k_fold(device, data, max_seq_len=75, fusion=None, k_folds=5,
                dropout_level=0.25, lr=1e-5,
                hidden_dim=256, n_layers=6, clip_at=1.0,
                mfcc_len=41, img_height=80, img_width=80, img_path=None,
-               word_threshold=5, batch_size=16):
+               word_threshold=5, batch_size=16, bidir=False, max_norm=2):
     start_time = datetime.datetime.now()
     torch.manual_seed(42)
     labels = torch.tensor(data['iGenre'].tolist())
@@ -287,19 +292,17 @@ def run_k_fold(device, data, max_seq_len=75, fusion=None, k_folds=5,
             'train_recall': [],
             'validation_recall': []
         }
-        vocab_size, train_data, test_data = prepare_train_test_data(data, fusion, train_ids, test_ids, max_seq_len,
-                                                                    word_threshold, img_path, img_height, img_width)
+        vocab_size, train_data, valid_data = prepare_train_test_data(data, fusion, train_ids, test_ids, max_seq_len,
+                                                                     word_threshold, img_path, img_height, img_width)
         model, is_fusion = get_model_to_train(fusion, vocab_size, embedding_dim, hidden_dim, max_seq_len,
                                               n_layers, dropout_level, device, mfcc_len,
-                                              img_height, img_width)
+                                              img_height, img_width, bidir=bidir, max_norm=max_norm)
         loss_fcn = get_loss_function(balance_classes, labels[train_ids], device)
         # define the optimizer
         optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-        lr_schedulers = [ReduceLROnPlateau(optimizer, 'min'),
-                         ExponentialLR(optimizer, 0.9)]
+        lr_schedulers = [ReduceLROnPlateau(optimizer, 'min')]
         for epoch in range(epochs):
             e_start = datetime.datetime.now()
-            print('Epoch {:} / {:}'.format(epoch + 1, epochs))
             # train model
             train_loss, train_predictions, train_labels, model = run_model(model,
                                                                            train_data.get_data_loader(
@@ -311,16 +314,15 @@ def run_k_fold(device, data, max_seq_len=75, fusion=None, k_folds=5,
                                                                            clip_at=clip_at,
                                                                            is_fusion=is_fusion)
             # evaluate model
-            valid_loss, test_predictions, test_labels, model = run_model(model,
-                                                                         test_data.get_data_loader(
-                                                                             batch_size=batch_size),
-                                                                         loss_fcn,
-                                                                         optimizer,
-                                                                         device,
-                                                                         is_training=False,
-                                                                         clip_at=clip_at,
-                                                                         is_fusion=is_fusion)
-            print(f'Losses - Train : {train_loss:.3f} / Validation : {valid_loss:.3f}')
+            valid_loss, valid_predictions, valid_labels, model = run_model(model,
+                                                                           valid_data.get_data_loader(
+                                                                               batch_size=batch_size),
+                                                                           loss_fcn,
+                                                                           optimizer,
+                                                                           device,
+                                                                           is_training=False,
+                                                                           clip_at=clip_at,
+                                                                           is_fusion=is_fusion)
             for lr_scheduler in lr_schedulers:
                 lr_scheduler.step(valid_loss)
             torch.cuda.empty_cache()
@@ -328,7 +330,7 @@ def run_k_fold(device, data, max_seq_len=75, fusion=None, k_folds=5,
             best_scores = update_best_result(best_scores,
                                              valid_loss,
                                              train_labels, train_predictions,
-                                             test_labels, test_predictions,
+                                             valid_labels, valid_predictions,
                                              model=model,
                                              model_file_name=f'saved_weights_Fold_{fold}.pt')
             # append training and validation loss
@@ -336,13 +338,14 @@ def run_k_fold(device, data, max_seq_len=75, fusion=None, k_folds=5,
             valid_losses.append(valid_loss)
             results[fold] = update_results_dict(results[fold],
                                                 train_labels, train_predictions,
-                                                test_labels, test_predictions)
+                                                valid_labels, valid_predictions)
             e_end = datetime.datetime.now()
-            print(f'Time for epoch : {(e_end - e_start).total_seconds()} seconds')
+            print(
+                f'Epoch {epoch + 1}/{epochs}, Train Loss {train_loss:.3f}/Validation Loss {valid_loss:.3f} [Time:  {(e_end - e_start).total_seconds()} seconds]')
         print('On Train Data')
-        print(classification_report(best_scores['train_labels'], best_scores['train_predictions']))
-        print('On Test Data')
-        print(classification_report(best_scores['test_labels'], best_scores['test_predictions']))
+        print(confusion_matrix(best_scores['train_labels'], best_scores['train_predictions']))
+        print('On Validation Data')
+        print(confusion_matrix(best_scores['test_labels'], best_scores['test_predictions']))
         results[fold]['train_losses'] = train_losses
         results[fold]['validation_losses'] = valid_losses
         print(f'Time for fold {fold} : {(datetime.datetime.now() - fold_start).total_seconds()} seconds')

@@ -294,7 +294,6 @@ def run_k_fold(base_model, device, data, sequences, attention_masks,
                          ExponentialLR(optimizer, 0.9)]
         for epoch in range(epochs):
             e_start = datetime.datetime.now()
-            print('Epoch {:} / {:}'.format(epoch + 1, epochs))
             # train model
             train_loss, train_predictions, train_labels, model = run_model(model,
                                                                            train_data.get_data_loader(),
@@ -313,7 +312,6 @@ def run_k_fold(base_model, device, data, sequences, attention_masks,
                                                                          is_training=False,
                                                                          clip_at=clip_at,
                                                                          is_fusion=is_fusion)
-            print(f'Losses - Train : {train_loss:.3f} / Validation : {valid_loss:.3f}')
             for lr_scheduler in lr_schedulers:
                 lr_scheduler.step(valid_loss)
             torch.cuda.empty_cache()
@@ -331,7 +329,8 @@ def run_k_fold(base_model, device, data, sequences, attention_masks,
                                                 train_labels, train_predictions,
                                                 test_labels, test_predictions)
             e_end = datetime.datetime.now()
-            print(f'Time for epoch : {(e_end - e_start).total_seconds()} seconds')
+            print('Epoch {:} / {:}, Train Losses : {:}/ Valid Losses : {:} [Time : {:} seconds]'.format(
+                  epoch + 1, epochs, train_loss, valid_loss, (e_end - e_start).total_seconds()))
         print('On Train Data')
         print(classification_report(best_scores['train_labels'], best_scores['train_predictions']))
         print('On Test Data')

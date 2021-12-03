@@ -175,6 +175,13 @@ class AbsDataset(IterableDataset, ABC):
         return DataLoader(self, batch_size=batch_size, generator=g)
 
 
+def get_metrics(actual, predicted, average='binary'):
+    return f1_score(actual, predicted, average=average), precision_score(actual, predicted,
+                                                                         average=average), recall_score(actual,
+                                                                                                        predicted,
+                                                                                                        average=average)
+
+
 def train_model(data, prepare_data_hnd, gpu, **kwargs):
     start_time = datetime.datetime.now()
 
@@ -206,6 +213,13 @@ def train_model(data, prepare_data_hnd, gpu, **kwargs):
                        'train_labels': [],
                        'validation_labels': []
                        }
+    cv_score = {'train_predictions': [],
+                'validation_predictions': [],
+                'train_labels': [],
+                'validation_labels': [],
+                'test_predictions': [],
+                'test_labels': []
+                }
     for fold, (train_ids, validation_ids) in enumerate(k_fold.split(data[feature], data[target])):
         print(f'FOLD {fold + 1} \n Data Sizes (Train/Test) : {len(train_ids)}/{len(validation_ids)}')
         fold_start = datetime.datetime.now()
@@ -286,6 +300,11 @@ def train_model(data, prepare_data_hnd, gpu, **kwargs):
         print(f'Fold {fold + 1} : {(datetime.datetime.now() - fold_start).total_seconds()} seconds')
         # To ensure CUDA is not overloaded
         del model
+        cv_score['train_labels'] = cv_score['train_labels'] + best_scores['train_labels'].tolist()
+        cv_score['train_predictions'] = cv_score['train_predictions'] + best_scores['train_predictions'].tolist()
+        cv_score['validation_labels'] = cv_score['validation_labels'] + best_scores['validation_labels'].tolist()
+        cv_score['validation_predictions'] = cv_score['validation_predictions'] + best_scores[
+            'validation_predictions'].tolist()
     end_time = datetime.datetime.now()
     print(f'Overall Time : {(end_time - start_time).total_seconds()} seconds')
     print('*** Confusion Matrix - Training ***')
@@ -294,6 +313,17 @@ def train_model(data, prepare_data_hnd, gpu, **kwargs):
     print(confusion_matrix(ovl_best_scores['validation_labels'], ovl_best_scores['validation_predictions']))
     if plot:
         plot_results(results, title)
+    cv_result = {}
+    cv_result['validation_f1'], cv_result['validation_precision'], cv_result['validation_recall'] = get_metrics(
+        cv_score['validation_labels'], cv_score['validation_predictions'])
+    cv_result['test_f1'], cv_result['test_precision'], cv_result['test_recall'] = get_metrics(cv_score['test_labels'],
+                                                                                              cv_score[
+                                                                                                  'test_predictions'])
+    cv_result['train_f1'], cv_result['train_precision'], cv_result['train_recall'] = get_metrics(
+        cv_score['train_labels'], cv_score['train_predictions'])
+    print('*** Cross Validation Score ***')
+    cv_result = pd.DataFrame(cv_result, index=[0])  # Scalar values
+    display(HTML(cv_result.to_html().replace("\\n", "<br>")))
     return results
 
 
